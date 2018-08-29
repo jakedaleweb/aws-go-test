@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"os"
 	"sort"
@@ -16,6 +17,7 @@ import (
 func main() {
 	svc := start_service()
 	data, err := get_data(svc)
+	fmt.Println(data)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -36,7 +38,7 @@ func start_service() *cloudwatch.CloudWatch {
 // Get data from CloudWatch and sort by date
 func get_data(svc *cloudwatch.CloudWatch) ([]*cloudwatch.Datapoint, error) {
 	end := time.Now()
-	start := time.Now().AddDate(0, 0, -1)
+	start := time.Now().Add(time.Hour * -24)
 	period := 60
 	var i64 int64
 	i64 = int64(period)
@@ -65,26 +67,50 @@ func get_data(svc *cloudwatch.CloudWatch) ([]*cloudwatch.Datapoint, error) {
 	}
 
 	sort.Slice(dataRes.Datapoints, func(i, j int) bool {
-		return dataRes.Datapoints[i].Timestamp.After(*dataRes.Datapoints[j].Timestamp)
+		return dataRes.Datapoints[i].Timestamp.Before(*dataRes.Datapoints[j].Timestamp)
 	})
 
 	return dataRes.Datapoints, nil
 }
 
+// Create and output a graph as an image
 func draw_graph(data []*cloudwatch.Datapoint) error {
 	var x, y []float64
 	for _, points := range data {
-		x = append(x, time.Since(*points.Timestamp).Seconds())
+		x = append(x, -time.Since(*points.Timestamp).Hours())
 		y = append(y, *points.Maximum)
+		fmt.Println(time.Since(*points.Timestamp).Seconds(), "\n")
 	}
 
 	graph := chart.Chart{
+		XAxis: chart.XAxis{
+			Name:      "Hours ago",
+			NameStyle: chart.StyleShow(),
+			Style:     chart.StyleShow(),
+		},
+		YAxis: chart.YAxis{
+			Name:      "CPU Utilisation (average percent)",
+			NameStyle: chart.StyleShow(),
+			Style:     chart.StyleShow(),
+		},
+		Background: chart.Style{
+			Padding: chart.Box{
+				Top:  20,
+				Left: 20,
+			},
+		},
 		Series: []chart.Series{
 			chart.ContinuousSeries{
+				Name:    "CPU Utilisation over time",
 				XValues: x,
 				YValues: y,
 			},
 		},
+	}
+
+	//note we have to do this as a separate step because we need a reference to graph
+	graph.Elements = []chart.Renderable{
+		chart.Legend(&graph),
 	}
 
 	buffer := bytes.NewBuffer([]byte{})
